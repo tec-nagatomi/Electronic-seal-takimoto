@@ -274,6 +274,21 @@ canvas#cv{
 .modal-body h4{font-size:12.5px;color:var(--brand-dark);margin:16px 0 6px;}
 .modal-body h4:first-child{margin-top:0;}
 .modal-foot{padding:12px 18px 18px;display:flex;gap:8px;justify-content:flex-end;}
+.modal.wide{max-width:920px;}
+.pdf-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 8px;}
+.pdf-stage{
+  position:relative;background:#eef2f4;border:1px solid var(--line);border-radius:8px;
+  overflow:auto;max-height:58vh;padding:12px;display:flex;justify-content:center;
+}
+.pdf-page-wrap{position:relative;line-height:0;box-shadow:0 2px 12px rgba(0,0,0,.18);background:#fff;}
+.pdf-page-wrap canvas{display:block;}
+.pdf-stamp{
+  position:absolute;left:0;top:0;cursor:grab;touch-action:none;user-select:none;
+  outline:1px dashed rgba(0,132,199,.75);outline-offset:2px;
+}
+.pdf-stamp.dragging{cursor:grabbing;outline-color:rgba(0,132,199,1);}
+.pdf-stamp img{display:block;width:100%;height:100%;pointer-events:none;}
+.pdf-hint{font-size:12px;color:var(--muted);margin:8px 0 4px;}
 
 .toast{
   position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
@@ -356,7 +371,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
           </div>
 
           <label>押印辺サイズ <span class="val" id="stampMmVal">15 mm</span></label>
-          <input type="range" id="stampMm" min="5" max="40" step="1" value="15">
+          <input type="range" id="stampMm" min="5" max="60" step="1" value="15">
           <p class="info">PDFに押印する際の一辺のサイズです。</p>
 
           <div class="divider-h"></div>
@@ -538,7 +553,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       <h4>登録した印鑑を使う</h4>
       印鑑パネルの画像をクリックすると選択状態になり、「クリップボードへコピー」「画像として保存」「編集」「削除」が使えるようになります。ダブルクリックでそのまま編集画面を開けます。
       <h4>PDFに押印する</h4>
-      印鑑を選択した状態で「PDFに押印する」を押すと、PDFファイルを選んでページ・位置・サイズを指定し、押印済みのPDFを書き出せます。
+      印鑑を選択した状態で「PDFに押印する」を押し、PDFファイルを選ぶと、そのPDFがプレビュー表示されます。印影をドラッグして押したい位置へ移動し（プレビュー上をクリックしてもその位置へ移動します）、サイズと回転をスライダーで調整して「押印してダウンロード」を押すと、押印済みのPDFが書き出されます。複数ページのPDFは「前のページ／次のページ」で押印したいページを表示してください。
       <h4>インポート／エクスポート</h4>
       登録した印鑑一式をJSONファイルとして書き出し・読み込みできます。別のパソコンへ引き継ぐ際にご利用ください。
       <h4>標準搭載にする</h4>
@@ -558,20 +573,49 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       <p class="info">v2.2.0: テンプレート内の日付を常に当日へ自動更新</p>
       <p class="info">v2.3.0: 登録済みの印鑑を標準搭載化する書き出し機能を追加</p>
       <p class="info">v2.4.0: 出図・営業・検査合格・森山・瀧本・谷川・品質管理を標準テンプレートに追加</p>
+      <p class="info">v2.5.0: PDFプレビュー上でのドラッグ配置と回転指定に対応</p>
+      <p class="info">v2.5.1: プレビューで日本語などの文字が表示されない不具合を修正</p>
     </div>
     <div class="modal-foot"><button class="btn sub" data-close="aboutModal">閉じる</button></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="pdfModal">
-  <div class="modal">
+  <div class="modal wide">
     <div class="modal-head">PDFに押印する<button class="x" data-close="pdfModal">×</button></div>
     <div class="modal-body">
       <p class="info" id="pdfSelInfo"></p>
       <button class="btn sub" id="btnChoosePdf" style="width:100%">PDFファイルを選択…</button>
       <p class="info" id="pdfFileName"></p>
+
       <div id="pdfOptions" style="display:none">
-        <label>押印するページ番号 <span class="val" id="pdfPageInfo"></span></label>
+        <div class="pdf-toolbar">
+          <button class="btn sub small" id="pdfPrevPage">← 前のページ</button>
+          <span class="info" id="pdfPageInfo"></span>
+          <button class="btn sub small" id="pdfNextPage">次のページ →</button>
+        </div>
+        <div class="pdf-stage" id="pdfStage">
+          <div class="pdf-page-wrap" id="pdfPageWrap">
+            <canvas id="pdfCanvas"></canvas>
+            <div class="pdf-stamp" id="pdfStamp"><img id="pdfStampImg" alt=""></div>
+          </div>
+        </div>
+        <p class="pdf-hint">印影をドラッグして押したい位置へ移動できます。プレビュー上をクリックしても、その位置へ移動します。</p>
+        <div class="row">
+          <div style="flex:1">
+            <label>押印サイズ <span class="val" id="pdfSizeVal">15 mm</span></label>
+            <input type="range" id="pdfSize" min="5" max="60" step="1" value="15">
+          </div>
+          <div style="flex:1">
+            <label>回転 <span class="val" id="pdfRotVal">0 °</span></label>
+            <input type="range" id="pdfRot" min="0" max="360" step="1" value="0">
+          </div>
+        </div>
+      </div>
+
+      <div id="pdfFallback" style="display:none">
+        <p class="info">プレビューを表示できないため、位置を数値で指定します。</p>
+        <label>押印するページ番号 <span class="val" id="pdfPageInfoFb"></span></label>
         <input type="number" id="pdfPage" min="1" value="1">
         <div class="row">
           <div>
@@ -603,7 +647,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
    バージョン情報
    更新時はここの 2 行だけ書き換えてください。
    ========================================================= */
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.5.1';
 const APP_UPDATED = '2026.08.04';
 /* ========================================================= */
 
@@ -1666,6 +1710,11 @@ $('stampMmVal').textContent = settings.stampMm + ' mm';
 $('stampMm').addEventListener('input', () => {
   settings.stampMm = +$('stampMm').value;
   $('stampMmVal').textContent = settings.stampMm + ' mm';
+  if (typeof pdfStampMm !== 'undefined'){
+    pdfStampMm = settings.stampMm;
+    $('pdfSize').value = pdfStampMm;
+    if (pdfPreviewOk){ clampStamp(); updateStampEl(); }
+  }
   saveSettings();
 });
 
@@ -1698,37 +1747,240 @@ function ensurePdfLib(){
   return pdfLibLoadPromise;
 }
 
+const PDFJS_BASE = 'https://unpkg.com/pdfjs-dist@3.11.174/';
+let pdfjsLoadPromise = null;
+function ensurePdfJs(){
+  if (window.pdfjsLib) return Promise.resolve();
+  if (pdfjsLoadPromise) return pdfjsLoadPromise;
+  pdfjsLoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_BASE + 'build/pdf.min.js';
+    s.onload = () => {
+      try {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'build/pdf.worker.min.js';
+      } catch(e){}
+      resolve();
+    };
+    s.onerror = () => reject(new Error('pdf.js load failed'));
+    document.head.appendChild(s);
+  });
+  return pdfjsLoadPromise;
+}
+
+/* ---------- 押印プレビュー用の状態 ---------- */
 let pdfBytes = null, pdfFile = null;
-$('btnStampPdf').addEventListener('click', () => {
+let pdfPreviewDoc = null;      // pdf.js のドキュメント
+let pdfPageCount = 1;
+let pdfCurPage = 1;
+let pdfPreviewOk = false;      // プレビュー表示に成功したか
+let pdfViewScale = 1;          // 表示px / PDFポイント
+let pdfViewW = 0, pdfViewH = 0;// 表示中ページの表示サイズ(px)
+let pdfPageRot = 0;            // ページの回転角(0/90/180/270)
+let pdfPageWpt = 0, pdfPageHpt = 0; // ページの原寸(pt、回転前)
+let pdfStampCx = 0, pdfStampCy = 0;  // 印影中心（表示px）
+let pdfStampMm = 15, pdfStampRot = 0;
+
+const mm2pt = mm => mm * 72 / 25.4;
+
+function pdfStampSizePx(){ return mm2pt(pdfStampMm) * pdfViewScale; }
+
+function updateStampEl(){
+  const el = $('pdfStamp');
+  const sizePx = pdfStampSizePx();
+  el.style.width = sizePx + 'px';
+  el.style.height = sizePx + 'px';
+  el.style.left = (pdfStampCx - sizePx/2) + 'px';
+  el.style.top  = (pdfStampCy - sizePx/2) + 'px';
+  el.style.transform = 'rotate(' + pdfStampRot + 'deg)';
+  $('pdfSizeVal').textContent = pdfStampMm + ' mm';
+  $('pdfRotVal').textContent = pdfStampRot + ' °';
+}
+
+function clampStamp(){
+  const half = pdfStampSizePx() / 2;
+  pdfStampCx = Math.min(Math.max(pdfStampCx, half), Math.max(half, pdfViewW - half));
+  pdfStampCy = Math.min(Math.max(pdfStampCy, half), Math.max(half, pdfViewH - half));
+}
+
+async function renderPdfPage(n){
+  if (!pdfPreviewDoc) return;
+  pdfCurPage = Math.min(Math.max(1, n), pdfPageCount);
+  const page = await pdfPreviewDoc.getPage(pdfCurPage);
+  const base = page.getViewport({ scale: 1 });
+  const stage = $('pdfStage');
+  const avail = Math.max(320, (stage.clientWidth || 760) - 28);
+  const scale = Math.min(avail / base.width, 1.8);
+  const vp = page.getViewport({ scale });
+
+  const canvas = $('pdfCanvas');
+  const c = canvas.getContext('2d');
+  canvas.width = Math.floor(vp.width);
+  canvas.height = Math.floor(vp.height);
+  canvas.style.width = canvas.width + 'px';
+  canvas.style.height = canvas.height + 'px';
+  $('pdfPageWrap').style.width = canvas.width + 'px';
+  $('pdfPageWrap').style.height = canvas.height + 'px';
+  try {
+    await page.render({ canvasContext: c, viewport: vp }).promise;
+  } catch(err){
+    console.error('page render error', err);
+    toast('ページの描画に失敗しました');
+  }
+
+  pdfViewScale = scale;
+  pdfViewW = canvas.width;
+  pdfViewH = canvas.height;
+  pdfPageRot = ((page.rotate % 360) + 360) % 360;
+  if (pdfPageRot === 90 || pdfPageRot === 270){
+    pdfPageWpt = base.height; pdfPageHpt = base.width;
+  } else {
+    pdfPageWpt = base.width; pdfPageHpt = base.height;
+  }
+
+  $('pdfPageInfo').textContent = pdfCurPage + ' / ' + pdfPageCount + ' ページ';
+  $('pdfPrevPage').disabled = pdfCurPage <= 1;
+  $('pdfNextPage').disabled = pdfCurPage >= pdfPageCount;
+
+  clampStamp();
+  updateStampEl();
+}
+
+/* 表示座標(px, 左上原点) → PDFユーザー空間(pt, 左下原点) */
+function viewToUser(px, py){
+  const vx = px / pdfViewScale, vy = py / pdfViewScale;
+  const W = pdfPageWpt, H = pdfPageHpt;
+  if (pdfPageRot === 90)  return { x: vy,     y: vx };
+  if (pdfPageRot === 180) return { x: W - vx, y: vy };
+  if (pdfPageRot === 270) return { x: W - vy, y: H - vx };
+  return { x: vx, y: H - vy };
+}
+
+/* ---------- ドラッグ配置 ---------- */
+(function initStampDrag(){
+  const el = $('pdfStamp');
+  const wrap = $('pdfPageWrap');
+  let dragging = false, offX = 0, offY = 0;
+
+  el.addEventListener('pointerdown', e => {
+    dragging = true;
+    el.classList.add('dragging');
+    el.setPointerCapture(e.pointerId);
+    const r = wrap.getBoundingClientRect();
+    offX = (e.clientX - r.left) - pdfStampCx;
+    offY = (e.clientY - r.top) - pdfStampCy;
+    e.preventDefault();
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const r = wrap.getBoundingClientRect();
+    pdfStampCx = (e.clientX - r.left) - offX;
+    pdfStampCy = (e.clientY - r.top) - offY;
+    clampStamp();
+    updateStampEl();
+  });
+  const stop = e => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('dragging');
+    try { el.releasePointerCapture(e.pointerId); } catch(err){}
+  };
+  el.addEventListener('pointerup', stop);
+  el.addEventListener('pointercancel', stop);
+
+  wrap.addEventListener('click', e => {
+    if (e.target === el || el.contains(e.target)) return;
+    const r = wrap.getBoundingClientRect();
+    pdfStampCx = e.clientX - r.left;
+    pdfStampCy = e.clientY - r.top;
+    clampStamp();
+    updateStampEl();
+  });
+})();
+
+$('pdfPrevPage').addEventListener('click', () => renderPdfPage(pdfCurPage - 1));
+$('pdfNextPage').addEventListener('click', () => renderPdfPage(pdfCurPage + 1));
+$('pdfSize').addEventListener('input', e => {
+  pdfStampMm = +e.target.value;
+  settings.stampMm = pdfStampMm; saveSettings();
+  $('stampMm').value = pdfStampMm;
+  $('stampMmVal').textContent = pdfStampMm + ' mm';
+  clampStamp(); updateStampEl();
+});
+$('pdfRot').addEventListener('input', e => {
+  pdfStampRot = +e.target.value;
+  updateStampEl();
+});
+
+/* ---------- モーダルを開く ---------- */
+$('btnStampPdf').addEventListener('click', async () => {
   if (!selectedId) { toast('先に印鑑を選択してください'); return; }
+  await refreshTemplateDates();
   const t = findTemplate(selectedId);
   $('pdfSelInfo').textContent = '選択中の印鑑：' + (t ? t.name : '');
+  if (t) $('pdfStampImg').src = t.imageDataURL;
   $('pdfOptions').style.display = 'none';
+  $('pdfFallback').style.display = 'none';
   $('pdfFileName').textContent = '';
   $('btnDoStampPdf').disabled = true;
-  pdfBytes = null; pdfFile = null;
+  pdfBytes = null; pdfFile = null; pdfPreviewDoc = null; pdfPreviewOk = false;
+  pdfStampMm = settings.stampMm || 15;
+  pdfStampRot = 0;
+  $('pdfSize').value = pdfStampMm;
+  $('pdfRot').value = 0;
   openModal('pdfModal');
 });
+
 $('btnChoosePdf').addEventListener('click', () => $('pdfFileInput').click());
 $('pdfFileInput').addEventListener('change', async e => {
   const file = e.target.files[0];
+  e.target.value = '';
   if (!file) return;
   pdfFile = file;
   $('pdfFileName').textContent = file.name;
   try {
-    pdfBytes = await file.arrayBuffer();
+    pdfBytes = new Uint8Array(await file.arrayBuffer());
     await ensurePdfLib();
     const doc = await PDFLib.PDFDocument.load(pdfBytes);
-    const n = doc.getPageCount();
-    $('pdfPage').max = n;
-    $('pdfPageInfo').textContent = '(全 ' + n + ' ページ)';
-    $('pdfOptions').style.display = 'block';
+    pdfPageCount = doc.getPageCount();
+    $('pdfPage').max = pdfPageCount;
+    $('pdfPageInfoFb').textContent = '(全 ' + pdfPageCount + ' ページ)';
     $('btnDoStampPdf').disabled = false;
   } catch(err){
+    console.error(err);
     toast('PDFの読み込みに失敗しました（インターネット接続が必要です）');
+    return;
   }
-  e.target.value = '';
+  // プレビュー表示（失敗時は数値入力にフォールバック）
+  try {
+    await ensurePdfJs();
+    pdfPreviewDoc = await pdfjsLib.getDocument({
+      data: new Uint8Array(pdfBytes),
+      cMapUrl: PDFJS_BASE + 'cmaps/',          // 日本語など多バイト文字の字形マッピング
+      cMapPacked: true,
+      standardFontDataUrl: PDFJS_BASE + 'standard_fonts/', // 未埋め込みの標準フォント
+      useSystemFonts: true
+    }).promise;
+    pdfPageCount = pdfPreviewDoc.numPages;
+    $('pdfOptions').style.display = 'block';
+    $('pdfFallback').style.display = 'none';
+    pdfPreviewOk = true;
+    pdfStampCx = 0; pdfStampCy = 0;
+    await renderPdfPage(1);
+    // 初期位置は右上あたり
+    const half = pdfStampSizePx() / 2;
+    pdfStampCx = pdfViewW - half - mm2pt(20) * pdfViewScale;
+    pdfStampCy = half + mm2pt(20) * pdfViewScale;
+    clampStamp(); updateStampEl();
+  } catch(err){
+    console.error(err);
+    pdfPreviewOk = false;
+    $('pdfOptions').style.display = 'none';
+    $('pdfFallback').style.display = 'block';
+    toast('プレビューを表示できないため数値指定に切り替えました');
+  }
 });
+
+/* ---------- 押印して書き出し ---------- */
 $('btnDoStampPdf').addEventListener('click', async () => {
   if (!selectedId || !pdfBytes) return;
   await refreshTemplateDates();
@@ -1738,28 +1990,53 @@ $('btnDoStampPdf').addEventListener('click', async () => {
     await ensurePdfLib();
     const doc = await PDFLib.PDFDocument.load(pdfBytes);
     const pages = doc.getPages();
-    const pageIdx = Math.max(1, Math.min(+$('pdfPage').value || 1, pages.length)) - 1;
-    const page = pages[pageIdx];
     const png = await doc.embedPng(t.imageDataURL);
 
-    const mm2pt = mm => mm * 72 / 25.4;
-    let sizePt = mm2pt(settings.stampMm || 15);
-    let xPt = mm2pt(+$('pdfX').value || 0);
-    let yPt = mm2pt(+$('pdfY').value || 0);
-    let angle = 0;
-    if (settings.random){
-      angle = (Math.random()*10 - 5);
-      xPt += mm2pt((Math.random()*4 - 2));
-      yPt += mm2pt((Math.random()*4 - 2));
+    let pageIdx, sizePt, ux, uy, angleDeg;
+
+    if (pdfPreviewOk){
+      pageIdx = pdfCurPage - 1;
+      sizePt = mm2pt(pdfStampMm);
+      let cx = pdfStampCx, cy = pdfStampCy;
+      let cssRot = pdfStampRot;
+      if (settings.random){
+        cssRot += (Math.random()*10 - 5);
+        cx += mm2pt(Math.random()*4 - 2) * pdfViewScale;
+        cy += mm2pt(Math.random()*4 - 2) * pdfViewScale;
+      }
+      const u = viewToUser(cx, cy);
+      ux = u.x; uy = u.y;
+      // 画面上の見た目（時計回り）→ PDFユーザー空間の角度（反時計回り）
+      angleDeg = pdfPageRot - cssRot;
+    } else {
+      pageIdx = Math.max(1, Math.min(+$('pdfPage').value || 1, pages.length)) - 1;
+      sizePt = mm2pt(settings.stampMm || 15);
+      const page0 = pages[pageIdx];
+      let xPt = mm2pt(+$('pdfX').value || 0);
+      let yPt = mm2pt(+$('pdfY').value || 0);
+      angleDeg = 0;
+      if (settings.random){
+        angleDeg = (Math.random()*10 - 5);
+        xPt += mm2pt(Math.random()*4 - 2);
+        yPt += mm2pt(Math.random()*4 - 2);
+      }
+      ux = xPt + sizePt/2;
+      uy = page0.getHeight() - yPt - sizePt/2;
     }
-    const ph = page.getHeight();
+
+    const page = pages[Math.max(0, Math.min(pageIdx, pages.length - 1))];
+    const th = angleDeg * Math.PI / 180;
+    const x = ux - (sizePt/2) * (Math.cos(th) - Math.sin(th));
+    const y = uy - (sizePt/2) * (Math.sin(th) + Math.cos(th));
+
     page.drawImage(png, {
-      x: xPt,
-      y: ph - yPt - sizePt,
+      x: x,
+      y: y,
       width: sizePt,
       height: sizePt,
-      rotate: PDFLib.degrees(angle),
+      rotate: PDFLib.degrees(angleDeg),
     });
+
     const outBytes = await doc.save();
     const blob = new Blob([outBytes], {type:'application/pdf'});
     const url = URL.createObjectURL(blob);
