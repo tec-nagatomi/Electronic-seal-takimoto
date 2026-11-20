@@ -385,6 +385,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
         <button class="btn sub small" id="btnCopySel">クリップボードへコピー</button>
         <button class="btn sub small" id="btnCopySelWhite" title="Adobe製品など、透明部分が黒くなるアプリに貼り付ける場合">白背景でコピー（Adobe用）</button>
         <button class="btn sub small" id="btnSaveImgSel">画像として保存</button>
+        <button class="btn sub small" id="btnSavePdfSel" title="背景が透明なPDFで保存します。Acrobatのカスタムスタンプに登録すると、下の文字や背景を隠さずに押印できます">透過PDFで保存（Acrobatスタンプ用）</button>
         <button class="btn sub small" id="btnTogglePanel">印鑑パネル</button>
         <button class="btn sub small" id="btnImport">インポート</button>
         <button class="btn sub small danger" id="btnDeleteSel">削除</button>
@@ -602,6 +603,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       印鑑パネルの画像をクリックすると選択状態になり、「クリップボードへコピー」「画像として保存」「編集」「削除」が使えるようになります。Adobe製品（Acrobat・Illustrator・Photoshopなど）に貼り付けると透明部分が黒くなる場合は「白背景でコピー（Adobe用）」を使ってください。透明のまま使いたい場合は「画像として保存」したPNGを読み込んでください。ダブルクリックでそのまま編集画面を開けます。
       <h4>PDFに押印する</h4>
       印鑑を選択した状態で「PDFに押印する」を押し、PDFファイルを選ぶと、そのPDFがプレビュー表示されます。印影をドラッグして押したい位置へ移動し（プレビュー上をクリックしてもその位置へ移動します）、サイズと回転をスライダーで調整して「押印してダウンロード」を押すと、押印済みのPDFが書き出されます。複数ページのPDFは「前のページ／次のページ」で押印したいページを表示してください。
+      <h4>Acrobatで背景を隠さずに押印する</h4>
+      「白背景でコピー」は印影の周りが白く塗られるため、貼り付け先の文字や背景色を隠してしまいます。背景を透過したまま押す場合は、印鑑を選択して「透過PDFで保存（Acrobatスタンプ用）」を押し、Acrobatの［ツール］→［スタンプ］→［カスタムスタンプ］→［作成］で保存したPDFを選んで登録してください。以後はスタンプとして何度でも透過のまま押せます（サイズは「押印辺サイズ」の設定になります）。「PDFに押印する」で押した印影も背景は透過されます。
       <h4>インポート／エクスポート</h4>
       登録した印鑑一式をJSONファイルとして書き出し・読み込みできます。別のパソコンへ引き継ぐ際にご利用ください。
       <h4>標準搭載にする</h4>
@@ -625,6 +628,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       <p class="info">v2.5.1: プレビューで日本語などの文字が表示されない不具合を修正</p>
       <p class="info">v2.6.0: 起動時のユーザー選択に対応（印鑑をユーザーごとに表示）</p>
       <p class="info">v2.7.0: Adobe製品向けの「白背景でコピー」を追加</p>
+      <p class="info">v2.8.0: 背景を透過したままAcrobatで押せる「透過PDFで保存」を追加</p>
     </div>
     <div class="modal-foot"><button class="btn sub" data-close="aboutModal">閉じる</button></div>
   </div>
@@ -697,8 +701,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
    バージョン情報
    更新時はここの 2 行だけ書き換えてください。
    ========================================================= */
-const APP_VERSION = '2.7.0';
-const APP_UPDATED = '2026.08.04';
+const APP_VERSION = '2.8.0';
+const APP_UPDATED = '2026.11.20';
 /* ========================================================= */
 
 const $ = id => document.getElementById(id);
@@ -1675,6 +1679,7 @@ function updateSelectionButtons(){
   $('btnCopySel').disabled = !has;
   $('btnCopySelWhite').disabled = !has;
   $('btnSaveImgSel').disabled = !has;
+  $('btnSavePdfSel').disabled = !has;
   $('btnEditSel').disabled = !has || builtin;
   $('btnDeleteSel').disabled = !has || builtin;
 }
@@ -1718,6 +1723,36 @@ function downloadTemplateImage(id){
 $('btnCopySel').addEventListener('click', () => { if (selectedId) copyTemplateImage(selectedId, false); });
 $('btnCopySelWhite').addEventListener('click', () => { if (selectedId) copyTemplateImage(selectedId, true); });
 $('btnSaveImgSel').addEventListener('click', () => { if (selectedId) downloadTemplateImage(selectedId); });
+
+/* 背景透過のまま1ページのPDFにして保存（Acrobatのカスタムスタンプ登録用）
+   ページサイズ＝押印辺サイズ(mm)。PNGの透明部分はPDFのソフトマスクとして保持される */
+async function downloadTemplatePdf(id){
+  await refreshTemplateDates();
+  const t = findTemplate(id);
+  if (!t) return;
+  try {
+    await ensurePdfLib();
+    const doc = await PDFLib.PDFDocument.create();
+    const png = await doc.embedPng(t.imageDataURL);
+    const sizePt = (settings.stampMm || 15) * 72 / 25.4;
+    const page = doc.addPage([sizePt, sizePt]);
+    page.drawImage(png, { x: 0, y: 0, width: sizePt, height: sizePt });
+    doc.setTitle(t.name || 'stamp');
+    const bytes = await doc.save();
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'inkan_' + (t.name || 'stamp').replace(/[\\/:*?"<>|\s]/g, '_') + '.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('透過PDFを保存しました（Acrobatのカスタムスタンプに登録してください）');
+  } catch(err){
+    console.error(err);
+    toast('PDFの作成に失敗しました（インターネット接続が必要です）');
+  }
+}
+$('btnSavePdfSel').addEventListener('click', () => { if (selectedId) downloadTemplatePdf(selectedId); });
 $('btnDeleteSel').addEventListener('click', () => {
   if (!selectedId) return;
   if (isBuiltin(selectedId)) { toast('標準テンプレートは削除できません'); return; }
