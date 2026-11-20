@@ -383,6 +383,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       </div>
       <div class="toolbar-row secondary">
         <button class="btn sub small" id="btnCopySel">クリップボードへコピー</button>
+        <button class="btn sub small" id="btnCopySelWhite" title="Adobe製品など、透明部分が黒くなるアプリに貼り付ける場合">白背景でコピー（Adobe用）</button>
         <button class="btn sub small" id="btnSaveImgSel">画像として保存</button>
         <button class="btn sub small" id="btnTogglePanel">印鑑パネル</button>
         <button class="btn sub small" id="btnImport">インポート</button>
@@ -598,7 +599,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       <h4>基本の使い方</h4>
       「＋ 新しく印鑑を作成する」から左側のカテゴリを選び、文字や色などを設定してプレビューを確認しながら「この印鑑を登録する」を押すと、メイン画面の印鑑パネルにテンプレートとして保存されます。
       <h4>登録した印鑑を使う</h4>
-      印鑑パネルの画像をクリックすると選択状態になり、「クリップボードへコピー」「画像として保存」「編集」「削除」が使えるようになります。ダブルクリックでそのまま編集画面を開けます。
+      印鑑パネルの画像をクリックすると選択状態になり、「クリップボードへコピー」「画像として保存」「編集」「削除」が使えるようになります。Adobe製品（Acrobat・Illustrator・Photoshopなど）に貼り付けると透明部分が黒くなる場合は「白背景でコピー（Adobe用）」を使ってください。透明のまま使いたい場合は「画像として保存」したPNGを読み込んでください。ダブルクリックでそのまま編集画面を開けます。
       <h4>PDFに押印する</h4>
       印鑑を選択した状態で「PDFに押印する」を押し、PDFファイルを選ぶと、そのPDFがプレビュー表示されます。印影をドラッグして押したい位置へ移動し（プレビュー上をクリックしてもその位置へ移動します）、サイズと回転をスライダーで調整して「押印してダウンロード」を押すと、押印済みのPDFが書き出されます。複数ページのPDFは「前のページ／次のページ」で押印したいページを表示してください。
       <h4>インポート／エクスポート</h4>
@@ -623,6 +624,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
       <p class="info">v2.5.0: PDFプレビュー上でのドラッグ配置と回転指定に対応</p>
       <p class="info">v2.5.1: プレビューで日本語などの文字が表示されない不具合を修正</p>
       <p class="info">v2.6.0: 起動時のユーザー選択に対応（印鑑をユーザーごとに表示）</p>
+      <p class="info">v2.7.0: Adobe製品向けの「白背景でコピー」を追加</p>
     </div>
     <div class="modal-foot"><button class="btn sub" data-close="aboutModal">閉じる</button></div>
   </div>
@@ -695,7 +697,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);letter-s
    バージョン情報
    更新時はここの 2 行だけ書き換えてください。
    ========================================================= */
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.7.0';
 const APP_UPDATED = '2026.08.04';
 /* ========================================================= */
 
@@ -1671,19 +1673,34 @@ function updateSelectionButtons(){
   const builtin = has && isBuiltin(selectedId);
   // コピー・画像保存は組み込みでも可能。編集・削除は組み込み不可。
   $('btnCopySel').disabled = !has;
+  $('btnCopySelWhite').disabled = !has;
   $('btnSaveImgSel').disabled = !has;
   $('btnEditSel').disabled = !has || builtin;
   $('btnDeleteSel').disabled = !has || builtin;
 }
 
-async function copyTemplateImage(id){
+async function copyTemplateImage(id, whiteBg){
   const t = findTemplate(id);
   if (!t) return;
   try {
-    const res = await fetch(t.imageDataURL);
-    const blob = await res.blob();
+    let blob;
+    if (whiteBg) {
+      // 透明部分を白で塗りつぶしてからコピー（Adobe製品は透明部分を黒として貼り付けるため）
+      const img = new Image();
+      await new Promise((ok, ng) => { img.onload = ok; img.onerror = ng; img.src = t.imageDataURL; });
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0);
+      blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    } else {
+      const res = await fetch(t.imageDataURL);
+      blob = await res.blob();
+    }
     await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
-    toast('クリップボードにコピーしました');
+    toast(whiteBg ? '白背景でクリップボードにコピーしました' : 'クリップボードにコピーしました');
   } catch(e){
     toast('このブラウザでは非対応です。画像として保存をご利用ください');
   }
@@ -1698,7 +1715,8 @@ function downloadTemplateImage(id){
   toast('保存しました');
 }
 
-$('btnCopySel').addEventListener('click', () => { if (selectedId) copyTemplateImage(selectedId); });
+$('btnCopySel').addEventListener('click', () => { if (selectedId) copyTemplateImage(selectedId, false); });
+$('btnCopySelWhite').addEventListener('click', () => { if (selectedId) copyTemplateImage(selectedId, true); });
 $('btnSaveImgSel').addEventListener('click', () => { if (selectedId) downloadTemplateImage(selectedId); });
 $('btnDeleteSel').addEventListener('click', () => {
   if (!selectedId) return;
